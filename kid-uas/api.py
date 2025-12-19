@@ -12,6 +12,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from enum import Enum
 import os
 import base64
 import secrets
@@ -20,6 +21,15 @@ from datetime import datetime
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.exceptions import InvalidSignature
+
+
+# =========================================================
+# ALGORITHM ENUM (UNTUK DROPDOWN SWAGGER)
+# =========================================================
+class SignatureAlgorithm(str, Enum):
+    ed25519 = "ed25519"
+    secp256k1 = "secp256k1"
+    secp256r1 = "secp256r1"
 
 
 # =========================================================
@@ -98,7 +108,7 @@ async def login(username: str = Form(...)):
 @app.post("/store")
 async def store_pubkey(
     username: str = Form(...),
-    algorithm: str = Form(...),
+    algorithm: SignatureAlgorithm = Form(...),
     file: UploadFile = File(...)
 ):
     try:
@@ -118,14 +128,13 @@ async def store_pubkey(
         "algorithm": algorithm
     }
 
-
 # =========================================================
 # VERIFY SIGNATURE
 # =========================================================
 @app.post("/verify")
 async def verify(
     username: str = Form(...),
-    algorithm: str = Form(...),
+    algorithm: SignatureAlgorithm = Form(...),
     message: str = Form(...),
     signature: str = Form(...)
 ):
@@ -141,12 +150,14 @@ async def verify(
         sig = base64.b64decode(signature)
         msg = message.encode()
 
-        if algorithm.lower() == "ed25519":
+        if algorithm == SignatureAlgorithm.ed25519:
             public_key.verify(sig, msg)
-        elif algorithm.lower() == "secp256k1":
+
+        elif algorithm in (
+            SignatureAlgorithm.secp256k1,
+            SignatureAlgorithm.secp256r1
+        ):
             public_key.verify(sig, msg, ec.ECDSA(hashes.SHA256()))
-        else:
-            raise HTTPException(status_code=400, detail="Algoritma tidak didukung")
 
         return {"message": "Signature VALID", "valid": True}
 
@@ -161,7 +172,7 @@ async def verify(
 async def relay(
     sender: str = Form(...),
     receiver: str = Form(...),
-    algorithm: str = Form(...),
+    algorithm: SignatureAlgorithm = Form(...),
     message: str = Form(...),
     signature: str = Form(...),
     token: str = Security(oauth2_scheme)
@@ -182,9 +193,13 @@ async def relay(
         sig = base64.b64decode(signature)
         msg = message.encode()
 
-        if algorithm.lower() == "ed25519":
+        if algorithm == SignatureAlgorithm.ed25519:
             public_key.verify(sig, msg)
-        elif algorithm.lower() == "secp256k1":
+
+        elif algorithm in (
+            SignatureAlgorithm.secp256k1,
+            SignatureAlgorithm.secp256r1
+        ):
             public_key.verify(sig, msg, ec.ECDSA(hashes.SHA256()))
 
     except InvalidSignature:
